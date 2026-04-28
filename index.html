@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>BoxScore — ボクシング採点</title>
+<meta name="description" content="リアルタイムボクシング採点。友達とURLを共有して各自独立採点。">
+<meta name="theme-color" content="#0d0f18">
+<!-- Firebase v9 Compat -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+<!-- React 18 + Babel (JSX) -->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#0d0f18;color:#dde0f0;font-family:-apple-system,'Hiragino Sans','Yu Gothic UI',Meiryo,sans-serif;-webkit-tap-highlight-color:transparent;font-size:16px}
+#root{max-width:520px;margin:0 auto;min-height:100vh;padding-bottom:env(safe-area-inset-bottom)}
+#splash{position:fixed;inset:0;background:#0d0f18;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:999}
+#splash .glove{font-size:48px;animation:pulse 1.4s ease-in-out infinite}
+#splash p{color:#666688;font-size:14px}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+.page{padding:1rem;padding-bottom:80px}
+/* Cards */
+.card{background:#16192a;border:1px solid #252840;border-radius:14px;padding:1rem 1.2rem}
+.card+.card{margin-top:10px}
+.section-gap{height:10px}
+/* Type */
+h1{font-size:22px;font-weight:700;color:#f0f0fa}
+h2{font-size:18px;font-weight:600;color:#f0f0fa}
+h3{font-size:15px;font-weight:600;color:#d0d0e0}
+p{line-height:1.6}
+label{font-size:12px;color:#7777aa;display:block;margin-bottom:4px;font-weight:600;letter-spacing:.04em}
+small{font-size:12px;color:#55557a;line-height:1.5}
+/* Inputs */
+input,select,textarea{width:100%;padding:10px 12px;border:1px solid #252840;border-radius:9px;background:#0d1020;color:#dde0f0;font-size:14px;font-family:inherit;outline:none;transition:border .15s}
+input:focus,select:focus,textarea:focus{border-color:#4a4e80}
+select option{background:#16192a}
+textarea{resize:vertical;min-height:60px}
+.field{margin-bottom:12px}
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 18px;border:1px solid #252840;border-radius:9px;background:#1a1d30;color:#b0b0cc;font-size:14px;cursor:pointer;font-family:inherit;transition:all .13s;-webkit-appearance:none}
+.btn:hover{background:#20243a;border-color:#363a58}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.4;pointer-events:none}
+.btn-red{background:#6e1520;border-color:#902030;color:#ffb0b8;font-weight:700}
+.btn-red:hover{background:#7d1825}
+.btn-blue{background:#142080;border-color:#1c2faa;color:#99aaff;font-weight:700}
+.btn-blue:hover{background:#182596}
+.btn-full{width:100%}
+.btn-lg{padding:14px 22px;font-size:15px;font-weight:700;border-radius:12px}
+.btn-ghost{background:transparent;border-color:#1e2138;color:#55557a;font-size:12px;padding:5px 10px}
+.btn-ghost:hover{background:#161828;color:#8888aa}
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+/* Score buttons */
+.sbtn{padding:12px 4px;font-size:13px;font-weight:800;font-family:'Courier New',monospace;border-radius:8px;letter-spacing:.02em}
+.sbtn.r{background:rgba(160,20,35,.18);border-color:rgba(190,30,50,.4);color:#e06070}
+.sbtn.r:hover{background:rgba(160,20,35,.32)}
+.sbtn.b{background:rgba(20,60,190,.18);border-color:rgba(28,80,210,.4);color:#7090f8}
+.sbtn.b:hover{background:rgba(20,60,190,.32)}
+.sbtn.d{background:rgba(80,80,110,.14);border-color:rgba(90,90,120,.32);color:#7777aa}
+.sbtn.d:hover{background:rgba(80,80,110,.25)}
+.sbtn.sel-r{background:#6e1520!important;border-color:#c02030!important;color:#fff!important}
+.sbtn.sel-b{background:#142080!important;border-color:#1c2faa!important;color:#fff!important}
+.sbtn.sel-d{background:#2a2d44!important;border-color:#404460!important;color:#ccc!important}
+/* Fighter display */
+.f-pair{display:flex;gap:8px;margin-bottom:8px}
+.f-col{flex:1;text-align:center;padding:12px 6px;border-radius:11px;background:#0d1020;border:1px solid #252840;border-top-width:3px}
+.f-col.rc{border-top-color:#c02030}
+.f-col.bc{border-top-color:#1c2faa}
+.f-name{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.f-name.rc{color:#e05060}
+.f-name.bc{color:#6080f0}
+.f-pts{font-size:46px;font-weight:900;font-family:'Courier New',monospace;line-height:1.05;margin:4px 0}
+.f-pts.rc{color:#e03050}
+.f-pts.bc{color:#3060f0}
+.f-pts.nil{color:#252840}
+.badges{display:flex;gap:3px;justify-content:center;flex-wrap:wrap;min-height:18px;margin-top:3px}
+.badge{font-size:10px;padding:1px 5px;border-radius:4px;background:#1a1d30;border:1px solid #252840;color:#7777aa}
+/* Round tabs */
+.tabs-wrap{display:flex;gap:4px;overflow-x:auto;padding:8px 1rem;background:#0a0c14;border-bottom:1px solid #181b28;position:sticky;top:52px;z-index:8;scrollbar-width:none}
+.tabs-wrap::-webkit-scrollbar{display:none}
+.rtab{min-width:40px;height:40px;padding:3px;border-radius:7px;border:1px solid #252840;background:#16192a;color:#55557a;font-size:11px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;transition:all .12s;flex-shrink:0;position:relative;font-family:inherit}
+.rtab:hover{background:#1c2038}
+.rtab.active{background:#dde0f0;color:#0d0f18;border-color:#dde0f0}
+.rtab.locked .lock-i{position:absolute;top:2px;right:2px;font-size:7px;opacity:.45}
+.rtab .dot{width:5px;height:5px;border-radius:50%}
+.rtab .dot.r{background:#e03050}
+.rtab .dot.b{background:#3060f0}
+.rtab .dot.eq{background:#6666aa}
+.rtab .dot.none{background:transparent}
+/* Top bar */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1rem;background:#0a0c14;border-bottom:1px solid #181b28;position:sticky;top:0;z-index:10;height:52px}
+.totals{display:flex;align-items:center;gap:5px;font-family:'Courier New',monospace}
+.tot{font-size:22px;font-weight:900}
+.tot.rc{color:#e03050}
+.tot.bc{color:#3060f0}
+.tot-sep{font-size:16px;color:#252840}
+.code-pill{font-size:11px;font-family:'Courier New',monospace;background:#16192a;border:1px solid #252840;border-radius:5px;padding:3px 7px;color:#7777aa;letter-spacing:.1em;cursor:pointer}
+.code-pill:hover{background:#1c2038;color:#9999cc}
+/* Bottom nav */
+.bnav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#0a0c14;border-top:1px solid #181b28;z-index:20;padding-bottom:env(safe-area-inset-bottom)}
+.bntab{flex:1;padding:11px 4px;border:none;background:none;font-size:12px;color:#55557a;cursor:pointer;font-family:inherit;transition:color .12s;display:flex;flex-direction:column;align-items:center;gap:3px}
+.bntab.active{color:#dde0f0;font-weight:600;border-top:2px solid #dde0f0}
+.bntab span:first-child{font-size:18px}
+/* Lock banner */
+.lock-banner{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 12px;background:#0d1020;border-radius:9px;color:#55557a;font-size:13px;border:1px solid #1e2138;margin-bottom:10px}
+/* Down/ded buttons */
+.dbtn{padding:8px 10px;font-size:12px;font-weight:600;border-radius:7px;border:1px solid rgba(200,160,0,.3);background:rgba(200,160,0,.1);color:#c09010;cursor:pointer;font-family:inherit;transition:all .12s;width:100%}
+.dbtn:hover{background:rgba(200,160,0,.2)}
+.dedbtn{padding:8px 10px;font-size:12px;font-weight:600;border-radius:7px;border:1px solid #252840;background:#16192a;color:#7777aa;cursor:pointer;font-family:inherit;transition:all .12s;width:100%}
+.dedbtn:hover{background:#1c2038}
+/* Charts */
+.bar-row{display:flex;align-items:center;gap:8px;margin:2px 0}
+.bar-lbl{width:26px;text-align:right;font-size:11px;font-family:'Courier New',monospace;color:#55557a}
+.bar-center{flex:1;height:22px;position:relative;display:flex;align-items:center}
+.bar-axis{position:absolute;left:50%;top:0;bottom:0;width:1px;background:#252840}
+.bar-seg{height:14px;border-radius:3px;position:absolute;top:50%;transform:translateY(-50%);transition:width .3s}
+.bar-val{width:30px;font-size:11px;font-weight:700;font-family:'Courier New',monospace}
+/* Score card table */
+.sc-table{width:100%;border-collapse:collapse;font-family:'Courier New',monospace;font-size:13px}
+.sc-table th{padding:7px 10px;text-align:center;font-size:11px;color:#55557a;border-bottom:1px solid #252840;font-weight:600}
+.sc-table td{padding:7px 10px;text-align:center;border-bottom:1px solid #1a1d28}
+.sc-table tr:last-child td{border-bottom:none}
+.sc-table .tot-row td{font-weight:900;font-size:20px;border-top:2px solid #303050}
+/* Toast */
+.toast{position:fixed;bottom:72px;left:50%;transform:translateX(-50%);background:#dde0f0;color:#0d0f18;padding:9px 20px;border-radius:30px;font-size:13px;font-weight:600;z-index:100;white-space:nowrap;pointer-events:none;animation:tin .2s ease;max-width:90vw}
+@keyframes tin{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+/* Share box */
+.share-box{background:#0d1020;border:1px solid #252840;border-radius:9px;padding:10px 12px;display:flex;align-items:center;gap:8px;margin-top:10px}
+.share-url{flex:1;font-size:11px;font-family:'Courier New',monospace;color:#6666aa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Config screen */
+.cfg-screen{padding:2rem 1rem;min-height:100vh;display:flex;flex-direction:column;gap:16px}
+.cfg-title{font-size:24px;font-weight:800;color:#e03050;letter-spacing:-.02em}
+.cfg-sub{font-size:13px;color:#55557a;line-height:1.7}
+.cfg-step{background:#16192a;border:1px solid #252840;border-radius:12px;padding:1rem}
+.cfg-step-num{display:inline-block;width:22px;height:22px;border-radius:50%;background:#252840;color:#9999cc;font-size:11px;font-weight:700;text-align:center;line-height:22px;margin-right:8px}
+.link{color:#7090f0;text-decoration:none}
+.link:hover{text-decoration:underline}
+.mono{font-family:'Courier New',monospace;background:#0d1020;border:1px solid #252840;border-radius:5px;padding:1px 5px;font-size:12px;color:#9999cc}
+</style>
+</head>
+<body>
+<div id="splash">
+  <div class="glove">🥊</div>
+  <p>BoxScore を起動中…</p>
+</div>
+<div id="root"></div>
+<canvas id="scoreCanvas" style="display:none"></canvas>
+
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback,Fragment} = React;
+
+/* ─── Firebase Config ────────────────────────────────────────────
+   ★ ここを自分のFirebaseプロジェクトの設定に書き換えてください。
+     Console → プロジェクト設定 → マイアプリ → Firebase SDK スニペット
+   ──────────────────────────────────────────────────────────────── */
+const firebaseConfig = {
+  apiKey: "AIzaSyCXDsg5_ishEWoPlNYuKKmYR1QX13n5-Gk",
+  authDomain: "boxing-41ebe.firebaseapp.com",
+  databaseURL: "https://boxing-41ebe-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "boxing-41ebe",
+  storageBucket: "boxing-41ebe.firebasestorage.app",
+  messagingSenderId: "443956310770",
+  appId: "1:443956310770:web:5080fac9c367e92b03166b",
+  measurementId: "G-LJLJXVDYWR"
+};
+/* ─────────────────────────────────────────────────────────────── */
+
+const ORGS    = ["WBA","WBC","IBF","WBO","IBO","OPBF","その他"];
+const WEIGHTS = ["ミニマム","Lフライ","フライ","Sフライ","バンタム","Sバンタム",
+                 "フェザー","Sフェザー","ライト","Sライト","ウェルター","Sウェルター",
+                 "ミドル","Sミドル","Lヘビー","クルーザー","ヘビー"];
+
+const genCode  = () => Math.random().toString(36).substr(2,6).toUpperCase();
+const genId    = () => `u${Date.now().toString(36)}${Math.random().toString(36).substr(2,5)}`;
+const mkRound  = n  => ({n,f1:null,f2:null,f1Downs:0,f2Downs:0,f1Ded:0,f2Ded:0,notes:"",locked:false});
+const isConfig = () => FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY";
+
+/* ─── Firebase helpers ─── */
+let db = null;
+function initFirebase() {
+  if (!isConfig()) return null;
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.database();
+    return db;
+  } catch(e) { console.error(e); return null; }
+}
+
+const fbGet  = (path) => db.ref(path).get().then(s => s.exists() ? s.val() : null);
+const fbSet  = (path, val) => db.ref(path).set(val);
+const fbOnce = (path, cb) => { const r = db.ref(path); r.on('value', s => cb(s.val())); return ()=>r.off(); };
+
+/* ─── ScorerId ─── */
+function getScorerId() {
+  let id = localStorage.getItem('boxscore_scorer_id');
+  if (!id) { id = genId(); localStorage.setItem('boxscore_scorer_id', id); }
+  return id;
+}
+
+/* ─── App ─── */
+function App() {
+  const [ready, setReady]       = useState(false);
+  const [configured, setConfigured] = useState(false);
+  const [page, setPage]         = useState('home');
+  const [scorerId]              = useState(getScorerId);
+  const [fightCode, setFightCode] = useState('');
+  const [joinInput, setJoinInput] = useState('');
+  const [meta, setMeta]         = useState({
+    date: new Date().toISOString().slice(0,10),
+    fighter1: 'RED CORNER', fighter2: 'BLUE CORNER',
+    weight: 'ウェルター', org: 'WBA', totalRounds: 12, prediction: ''
+  });
+  const [rounds, setRounds]     = useState([]);
+  const [currRound, setCurrRound] = useState(1);
+  const [activeRound, setActiveRound] = useState(1);
+  const [tab, setTab]           = useState('score');
+  const [loading, setLoading]   = useState(false);
+  const [toast, setToast]       = useState(null);
+  const roundsRef               = useRef(rounds);
+  const currRef                 = useRef(currRound);
+  roundsRef.current             = rounds;
+  currRef.current               = currRound;
+
+  useEffect(() => {
+    const ok = isConfig();
+    setConfigured(ok);
+    if (ok) initFirebase();
+    // parse ?c= from URL
+    const params = new URLSearchParams(location.search);
+    const c = params.get('c');
+    if (c) setJoinInput(c.toUpperCase());
+    setTimeout(() => {
+      document.getElementById('splash').style.display = 'none';
+      setReady(true);
+    }, 600);
+  }, []);
+
+  const showToast = useCallback((msg, ms=2800) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), ms);
+  }, []);
+
+  const persist = useCallback(async (r, curr) => {
+    if (!fightCode || !scorerId || !db) return;
+    try { await fbSet(`fights/${fightCode}/scorers/${scorerId}`, { rounds: r, currRound: curr, updatedAt: Date.now() }); }
+    catch(e) { console.warn('persist error', e); }
+  }, [fightCode, scorerId]);
+
+  const createFight = async () => {
+    if (!db) return;
+    const code = genCode();
+    const m = { ...meta, createdAt: Date.now() };
+    try {
+      await fbSet(`fights/${code}/meta`, m);
+      setFightCode(code);
+      const r = Array.from({ length: meta.totalRounds }, (_, i) => mkRound(i+1));
+      setRounds(r); setCurrRound(1); setActiveRound(1);
+      await fbSet(`fights/${code}/scorers/${scorerId}`, { rounds: r, currRound: 1, updatedAt: Date.now() });
+      history.replaceState({}, '', `?c=${code}`);
+      setPage('scoring');
+      showToast(`試合コード: ${code} ← 作成完了！`, 4000);
+    } catch(e) { showToast('エラー: ' + e.message); }
+  };
+
+  const joinFight = async () => {
+    const code = joinInput.trim().toUpperCase();
+    if (!code || !db) return;
+    setLoading(true);
+    try {
+      const fm = await fbGet(`fights/${code}/meta`);
+      if (!fm) { showToast('コードが見つかりません'); setLoading(false); return; }
+      setMeta(fm);
+      setFightCode(code);
+      const existing = await fbGet(`fights/${code}/scorers/${scorerId}`);
+      let r, curr;
+      if (existing) { r = existing.rounds; curr = existing.currRound || 1; }
+      else { r = Array.from({ length: fm.totalRounds }, (_, i) => mkRound(i+1)); curr = 1;
+             await fbSet(`fights/${code}/scorers/${scorerId}`, { rounds: r, currRound: 1, updatedAt: Date.now() }); }
+      setRounds(r); setCurrRound(curr); setActiveRound(curr);
+      history.replaceState({}, '', `?c=${code}`);
+      setPage('scoring');
+    } catch(e) { showToast('エラー: ' + e.message); }
+    setLoading(false);
+  };
+
+  const updateRound = useCallback((idx, patch) => {
+    setRounds(prev => {
+      const next = prev.map((r, i) => i === idx ? { ...r, ...patch } : r);
+      persist(next, currRef.current);
+      return next;
+    });
+  }, [persist]);
+
+  const setScore = (idx, f1, f2) => updateRound(idx, { f1, f2 });
+
+  const addDown = (idx, fighter) => {
+    const r = roundsRef.current[idx];
+    if (fighter === 1) {
+      const d = (r.f1Downs||0)+1;
+      updateRound(idx, { f1Downs: d, f1: d >= 2 ? 7 : 8, f2: 10 });
+    } else {
+      const d = (r.f2Downs||0)+1;
+      updateRound(idx, { f2Downs: d, f2: d >= 2 ? 7 : 8, f1: 10 });
+    }
+  };
+
+  const addDeduction = (idx, fighter) => {
+    const r = roundsRef.current[idx];
+    if (fighter === 1) updateRound(idx, { f1Ded: (r.f1Ded||0)+1, f1: r.f1 !== null ? Math.max(r.f1-1, 6) : null });
+    else               updateRound(idx, { f2Ded: (r.f2Ded||0)+1, f2: r.f2 !== null ? Math.max(r.f2-1, 6) : null });
+  };
+
+  const lockAndNext = () => {
+    const r = rounds[currRound-1];
+    if (r.f1 === null || r.f2 === null) { showToast('スコアを入力してください'); return; }
+    setRounds(prev => {
+      const next = prev.map((rr, i) => i === currRound-1 ? { ...rr, locked: true } : rr);
+      const nc = Math.min(currRound+1, meta.totalRounds);
+      setCurrRound(nc); setActiveRound(nc);
+      persist(next, nc);
+      return next;
+    });
+    showToast(`R${currRound} をロック`);
+  };
+
+  const unlockRound = (n) => { updateRound(n-1, { locked: false }); setActiveRound(n); showToast(`R${n} を編集可能にしました`); };
+
+  const totals = rounds.reduce((a, r) => ({ f1: a.f1 + (r.f1||0), f2: a.f2 + (r.f2||0) }), { f1: 0, f2: 0 });
+
+  const shareUrl = fightCode ? `${location.origin}${location.pathname}?c=${fightCode}` : '';
+
+  if (!ready) return null;
+  if (!configured) return <ConfigScreen />;
+  if (page === 'home') return <HomeScreen meta={meta} setMeta={setMeta} joinInput={joinInput} setJoinInput={setJoinInput} loading={loading} createFight={createFight} joinFight={joinFight} setPage={setPage} showToast={showToast} />;
+  if (page === 'setup') return <SetupScreen meta={meta} setMeta={setMeta} setPage={setPage} createFight={createFight} />;
+
+  const ar = rounds[activeRound-1];
+  return <ScoringScreen meta={meta} rounds={rounds} currRound={currRound} activeRound={activeRound} setActiveRound={setActiveRound} tab={tab} setTab={setTab} totals={totals} ar={ar} fightCode={fightCode} shareUrl={shareUrl} setScore={setScore} addDown={addDown} addDeduction={addDeduction} lockAndNext={lockAndNext} unlockRound={unlockRound} updateRound={updateRound} showToast={showToast} toast={toast} />;
+}
+
+/* ─── Config Screen ─── */
+function ConfigScreen() {
+  return (
+    <div className="cfg-screen">
+      <div>
+        <div className="cfg-title">🥊 BoxScore</div>
+        <p className="cfg-sub" style={{marginTop:8}}>初回セットアップが必要です。<br/>index.html の Firebase 設定を書き換えてください。</p>
+      </div>
+      <div className="cfg-step">
+        <span className="cfg-step-num">1</span>
+        <strong>Firebase プロジェクト作成</strong>
+        <p style={{marginTop:8,fontSize:13,color:'#7777aa'}}>
+          <a className="link" href="https://console.firebase.google.com/" target="_blank">console.firebase.google.com</a> で新規プロジェクトを作成。<br/>
+          <strong>Realtime Database</strong> を有効化し、<br/>
+          ロケーション: <span className="mono">asia-southeast1</span> を選択。
+        </p>
+      </div>
+      <div className="cfg-step">
+        <span className="cfg-step-num">2</span>
+        <strong>セキュリティルール設定</strong>
+        <p style={{marginTop:8,fontSize:13,color:'#7777aa'}}>
+          Realtime Database → ルール タブで以下を貼り付けて公開:
+        </p>
+        <pre style={{background:'#0d1020',border:'1px solid #252840',borderRadius:8,padding:'10px 12px',marginTop:8,fontSize:11,color:'#9999cc',overflowX:'auto',lineHeight:1.6}}>{`{
+  "rules": {
+    "fights": {
+      "$code": {
+        "meta": {
+          ".read": true,
+          ".write": "!data.exists()"
+        },
+        "scorers": {
+          "$sid": {
+            ".read": true,
+            ".write": true
+          }
+        }
+      }
+    }
+  }
+}`}</pre>
+      </div>
+      <div className="cfg-step">
+        <span className="cfg-step-num">3</span>
+        <strong>index.html を書き換え</strong>
+        <p style={{marginTop:8,fontSize:13,color:'#7777aa'}}>
+          プロジェクト設定 → マイアプリ → SDK スニペット の内容を<br/>
+          <span className="mono">FIREBASE_CONFIG</span> オブジェクトに貼り付けてください。
+        </p>
+      </div>
+      <div className="cfg-step">
+        <span className="cfg-step-num">4</span>
+        <strong>GitHub Pages にデプロイ</strong>
+        <p style={{marginTop:8,fontSize:13,color:'#7777aa'}}>
+          リポジトリに <span className="mono">index.html</span> を push → Settings → Pages → Deploy from main。
+        </p>
+      </div>
+      <div style={{padding:'12px',background:'rgba(180,20,40,.12)',border:'1px solid rgba(200,30,50,.3)',borderRadius:10,fontSize:13,color:'#dd8090'}}>
+        ⚠️ この画面は <span className="mono">apiKey</span> が <span className="mono">"YOUR_API_KEY"</span> のままの場合に表示されます。設定完了後は自動的に消えます。
+      </div>
+    </div>
+  );
+}
+
+/* ─── Home Screen ─── */
+function HomeScreen({ meta, setMeta, joinInput, setJoinInput, loading, createFight, joinFight, setPage, showToast }) {
+  return (
+    <div className="page">
+      <div style={{textAlign:'center',padding:'2.5rem 0 2rem'}}>
+        <div style={{fontSize:48,marginBottom:10}}>🥊</div>
+        <h1 style={{fontSize:28,letterSpacing:'-.02em'}}>BoxScore</h1>
+        <p style={{marginTop:6,fontSize:14,color:'#55557a'}}>リアルタイム ボクシング採点アプリ</p>
+      </div>
+      <div className="card">
+        <h3 style={{marginBottom:6}}>新しい試合を作成</h3>
+        <p style={{fontSize:13,color:'#55557a',marginBottom:14,lineHeight:1.6}}>試合コードを作成して友達にURLを共有。<br/>各自が独立して採点できます。</p>
+        <button className="btn btn-red btn-full btn-lg" onClick={() => setPage('setup')}>試合を作成する →</button>
+      </div>
+      <div className="card">
+        <h3 style={{marginBottom:6}}>試合コードで参加</h3>
+        <p style={{fontSize:13,color:'#55557a',marginBottom:12,lineHeight:1.6}}>友達から受け取ったコードを入力。あなた専用のスコアカードが作成されます。</p>
+        <div className="row" style={{marginBottom:0}}>
+          <input placeholder="試合コード (例: AB3X7K)" value={joinInput}
+            onChange={e => setJoinInput(e.target.value.toUpperCase())}
+            onKeyDown={e => e.key==='Enter' && joinFight()}
+            style={{fontFamily:"'Courier New',monospace",letterSpacing:'.1em',textTransform:'uppercase'}} />
+          <button className="btn btn-blue" onClick={joinFight} disabled={loading} style={{minWidth:70}}>
+            {loading ? '…' : '参加'}
+          </button>
+        </div>
+      </div>
+      <p style={{marginTop:16,padding:'0 4px',fontSize:12,color:'#33335a',lineHeight:1.7}}>
+        各採点者のデータはFirebaseに個別保存されます。リロードしても採点は維持され、他の人の採点と混ざることはありません。
+      </p>
+    </div>
+  );
+}
+
+/* ─── Setup Screen ─── */
+function SetupScreen({ meta, setMeta, setPage, createFight }) {
+  const upd = (k, v) => setMeta(m => ({ ...m, [k]: v }));
+  return (
+    <div className="page">
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+        <button className="btn btn-ghost" onClick={() => setPage('home')}>← 戻る</button>
+        <h2>試合情報</h2>
+      </div>
+      <div className="card">
+        <div className="field">
+          <label>レッドコーナー（選手1）</label>
+          <input value={meta.fighter1} onChange={e=>upd('fighter1',e.target.value)} placeholder="選手名" />
+        </div>
+        <div className="field">
+          <label>ブルーコーナー（選手2）</label>
+          <input value={meta.fighter2} onChange={e=>upd('fighter2',e.target.value)} placeholder="選手名" />
+        </div>
+        <div className="row" style={{marginBottom:12}}>
+          <div><label>団体</label>
+            <select value={meta.org} onChange={e=>upd('org',e.target.value)}>
+              {ORGS.map(o=><option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div><label>階級</label>
+            <select value={meta.weight} onChange={e=>upd('weight',e.target.value)}>
+              {WEIGHTS.map(w=><option key={w}>{w}級</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="row" style={{marginBottom:12}}>
+          <div><label>試合日</label>
+            <input type="date" value={meta.date} onChange={e=>upd('date',e.target.value)} />
+          </div>
+          <div><label>ラウンド数</label>
+            <select value={meta.totalRounds} onChange={e=>upd('totalRounds',Number(e.target.value))}>
+              {[4,6,8,10,12].map(n=><option key={n} value={n}>{n}R</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="field" style={{marginBottom:0}}>
+          <label>勝敗予想メモ（任意）</label>
+          <input value={meta.prediction} onChange={e=>upd('prediction',e.target.value)} placeholder="例: 田中 8R TKO勝利" />
+        </div>
+      </div>
+      <div style={{marginTop:12}}>
+        <button className="btn btn-red btn-full btn-lg" onClick={createFight}>試合を開始して採点スタート →</button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Scoring Screen ─── */
+function ScoringScreen({ meta, rounds, currRound, activeRound, setActiveRound, tab, setTab, totals, ar, fightCode, shareUrl, setScore, addDown, addDeduction, lockAndNext, unlockRound, updateRound, showToast, toast }) {
+  const idx = activeRound - 1;
+  const isLocked = ar && ar.locked;
+  const isCurrActive = activeRound === currRound;
+  const scoredRounds = rounds.filter(r => r.f1 !== null);
+
+  const copyUrl = () => {
+    navigator.clipboard.writeText(shareUrl).then(()=>showToast('URLをコピーしました！友達に送ってね')).catch(()=>{showToast(shareUrl,5000);});
+  };
+
+  const SBtn = ({f1v, f2v, label, cls}) => {
+    const active = ar && ar.f1===f1v && ar.f2===f2v;
+    const aClass = f1v>f2v ? 'sel-r' : f2v>f1v ? 'sel-b' : 'sel-d';
+    return <button className={`btn sbtn ${cls} ${active?aClass:''}`} disabled={isLocked} onClick={()=>setScore(idx,f1v,f2v)}>{label}</button>;
+  };
+
+  return (
+    <div>
+      {/* Top bar */}
+      <div className="topbar">
+        <div style={{display:'flex',alignItems:'center',gap:8,minWidth:0}}>
+          <span className="code-pill" onClick={copyUrl} title="タップしてURLをコピー">{fightCode}</span>
+          <span style={{fontSize:12,color:'#44446a',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:130}}>
+            {meta.fighter1} vs {meta.fighter2}
+          </span>
+        </div>
+        <div className="totals">
+          <span className="tot rc">{totals.f1}</span>
+          <span className="tot-sep">—</span>
+          <span className="tot bc">{totals.f2}</span>
+        </div>
+      </div>
+
+      {/* Round tabs */}
+      <div className="tabs-wrap">
+        {rounds.map(r => {
+          const scored = r.f1 !== null && r.f2 !== null;
+          const dot = !scored ? 'none' : r.f1>r.f2 ? 'r' : r.f2>r.f1 ? 'b' : 'eq';
+          return (
+            <button key={r.n} className={`rtab ${r.n===activeRound?'active':''} ${r.locked?'locked':''}`} onClick={()=>setActiveRound(r.n)}>
+              <span style={{fontSize:10}}>R{r.n}</span>
+              <span className={`dot ${dot}`} />
+              {r.locked && <span className="lock-i">🔒</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Tab content */}
+      {tab === 'score' && ar && (
+        <div style={{padding:'12px 1rem 0'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+            <span style={{fontSize:13,color:'#55557a',fontWeight:700}}>ROUND {activeRound}</span>
+            <div style={{display:'flex',gap:6}}>
+              {isLocked && <button className="btn btn-ghost" style={{fontSize:11}} onClick={()=>unlockRound(activeRound)}>✏️ 修正</button>}
+              {!isLocked && !isCurrActive && <span style={{fontSize:11,padding:'3px 8px',background:'rgba(200,160,0,.12)',border:'1px solid rgba(200,160,0,.3)',borderRadius:5,color:'#c09010'}}>編集中</span>}
+            </div>
+          </div>
+
+          {isLocked && <div className="lock-banner">🔒 ロック済み — 「✏️ 修正」ボタンで編集できます</div>}
+
+          {/* Fighter score display */}
+          <div className="f-pair">
+            <div className="f-col rc">
+              <div className="f-name rc">{meta.fighter1}</div>
+              <div className={`f-pts ${ar.f1===null?'nil':'rc'}`}>{ar.f1===null?'—':ar.f1}</div>
+              <div className="badges">
+                {ar.f1Downs>0 && <span className="badge" style={{color:'#c09010'}}>KD×{ar.f1Downs}</span>}
+                {ar.f1Ded>0  && <span className="badge" style={{color:'#e05060'}}>減点×{ar.f1Ded}</span>}
+              </div>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,padding:'0 2px'}}>
+              <span style={{fontSize:10,color:'#33335a',letterSpacing:'.05em'}}>VS</span>
+              {ar.f1!==null && ar.f2!==null &&
+                <span style={{fontSize:13,fontFamily:"'Courier New',monospace",fontWeight:800,color:'#33335a'}}>{ar.f1}-{ar.f2}</span>}
+            </div>
+            <div className="f-col bc">
+              <div className="f-name bc">{meta.fighter2}</div>
+              <div className={`f-pts ${ar.f2===null?'nil':'bc'}`}>{ar.f2===null?'—':ar.f2}</div>
+              <div className="badges">
+                {ar.f2Downs>0 && <span className="badge" style={{color:'#c09010'}}>KD×{ar.f2Downs}</span>}
+                {ar.f2Ded>0  && <span className="badge" style={{color:'#e05060'}}>減点×{ar.f2Ded}</span>}
+              </div>
+            </div>
+          </div>
+
+          {!isLocked && (
+            <>
+              {/* Score buttons */}
+              <div className="card" style={{padding:'12px'}}>
+                <div style={{fontSize:11,color:'#55557a',marginBottom:8,fontWeight:700}}>{meta.fighter1} 優勢</div>
+                <div className="row" style={{marginBottom:6}}>
+                  <SBtn f1v={10} f2v={9} label="10-9" cls="r" />
+                  <SBtn f1v={10} f2v={8} label="10-8" cls="r" />
+                  <SBtn f1v={10} f2v={7} label="10-7" cls="r" />
+                </div>
+                <div style={{display:'flex',justifyContent:'center',marginBottom:6}}>
+                  <SBtn f1v={10} f2v={10} label="10-10  引き分け" cls="d" />
+                </div>
+                <div style={{fontSize:11,color:'#55557a',marginBottom:8,fontWeight:700}}>{meta.fighter2} 優勢</div>
+                <div className="row">
+                  <SBtn f1v={9}  f2v={10} label="9-10"  cls="b" />
+                  <SBtn f1v={8}  f2v={10} label="8-10"  cls="b" />
+                  <SBtn f1v={7}  f2v={10} label="7-10"  cls="b" />
+                </div>
+              </div>
+
+              {/* Down / Deduction */}
+              <div className="row" style={{margin:'8px 0'}}>
+                <div>
+                  <label>ダウン</label>
+                  <button className="dbtn" onClick={()=>addDown(idx,1)}>{meta.fighter1} ↓ ダウン</button>
+                </div>
+                <div>
+                  <label>　</label>
+                  <button className="dbtn" onClick={()=>addDown(idx,2)}>{meta.fighter2} ↓ ダウン</button>
+                </div>
+              </div>
+              <div className="row" style={{marginBottom:10}}>
+                <div>
+                  <label>反則減点</label>
+                  <button className="dedbtn" onClick={()=>addDeduction(idx,1)}>{meta.fighter1} −1点</button>
+                </div>
+                <div>
+                  <label>　</label>
+                  <button className="dedbtn" onClick={()=>addDeduction(idx,2)}>{meta.fighter2} −1点</button>
+                </div>
+              </div>
+
+              {/* Memo */}
+              <div style={{marginBottom:12}}>
+                <label>R{activeRound} メモ</label>
+                <textarea value={ar.notes} onChange={e=>updateRound(idx,{notes:e.target.value})}
+                  placeholder="例: ジャブ連打が有効、偶然のバッティングあり…" rows={2} />
+              </div>
+
+              {isCurrActive && (
+                <button className="btn btn-red btn-full btn-lg" onClick={lockAndNext}>
+                  {activeRound===meta.totalRounds ? '🔒 最終ラウンドをロック' : `🔒 R${activeRound} をロックして次へ →`}
+                </button>
+              )}
+            </>
+          )}
+
+          {/* Share section */}
+          <div style={{marginTop:14}}>
+            <label>友達に共有（各自独立して採点）</label>
+            <div className="share-box">
+              <span className="share-url">{shareUrl}</span>
+              <button className="btn btn-ghost" style={{whiteSpace:'nowrap',flexShrink:0}} onClick={copyUrl}>コピー</button>
+            </div>
+            <p style={{marginTop:6,fontSize:11,color:'#33335a'}}>このURLを友達に送るだけ。各自が独立したスコアカードで採点できます。</p>
+          </div>
+        </div>
+      )}
+
+      {tab === 'chart' && <ChartTab rounds={rounds} meta={meta} totals={totals} />}
+      {tab === 'card'  && <CardTab  rounds={rounds} meta={meta} totals={totals} fightCode={fightCode} showToast={showToast} />}
+
+      {/* Bottom nav */}
+      <div className="bnav">
+        {[['score','📋','採点'],['chart','📊','グラフ'],['card','🗒','カード']].map(([v,ic,lb])=>(
+          <button key={v} className={`bntab ${tab===v?'active':''}`} onClick={()=>setTab(v)}>
+            <span>{ic}</span><span>{lb}</span>
+          </button>
+        ))}
+      </div>
+
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+/* ─── Chart Tab ─── */
+function ChartTab({ rounds, meta, totals }) {
+  const scored = rounds.filter(r => r.f1 !== null && r.f2 !== null);
+  if (!scored.length) return <div style={{padding:'3rem 1rem',textAlign:'center',color:'#33335a',fontSize:14}}>まだ採点されたラウンドがありません</div>;
+  const maxD = Math.max(...scored.map(r=>Math.abs(r.f1-r.f2)), 1);
+  let cf1=0,cf2=0;
+  const cum = rounds.map(r=>{if(r.f1!==null){cf1+=r.f1;cf2+=r.f2;}return{n:r.n,diff:cf1-cf2,done:r.f1!==null};});
+  return (
+    <div style={{padding:'12px 1rem'}}>
+      <div className="card">
+        <div style={{fontSize:12,fontWeight:700,marginBottom:10,color:'#55557a'}}>ラウンド別スコア差</div>
+        {rounds.map(r => {
+          if (r.f1===null) return null;
+          const diff = r.f1 - r.f2;
+          const pct  = Math.abs(diff)/maxD*42;
+          return (
+            <div key={r.n} className="bar-row">
+              <span className="bar-lbl">R{r.n}</span>
+              <div className="bar-center">
+                <span className="bar-axis" />
+                {diff>0 && <div className="bar-seg" style={{background:'#8a1520',right:'50%',width:`${pct}%`,maxWidth:'44%'}} />}
+                {diff<0 && <div className="bar-seg" style={{background:'#142280',left:'50%',width:`${pct}%`,maxWidth:'44%'}} />}
+              </div>
+              <span className="bar-val" style={{color:diff>0?'#e03050':diff<0?'#3060f0':'#555577'}}>
+                {diff>0?`+${diff}`:diff<0?diff:'='}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="card" style={{marginTop:10}}>
+        <div style={{fontSize:12,fontWeight:700,marginBottom:10,color:'#55557a'}}>累計スコア差の推移</div>
+        <svg width="100%" height="72" viewBox="0 0 300 72" style={{overflow:'visible'}}>
+          <line x1="0" y1="36" x2="300" y2="36" stroke="#252840" strokeWidth="1"/>
+          <text x="2" y="32" fontSize="9" fill="#55557a">{meta.fighter1.slice(0,6)}</text>
+          <text x="2" y="52" fontSize="9" fill="#55557a">{meta.fighter2.slice(0,6)}</text>
+          {(() => {
+            const pts = cum.filter(d=>d.done);
+            if (pts.length < 2) return null;
+            const maxC = Math.max(...pts.map(d=>Math.abs(d.diff)),1);
+            const coords = pts.map((d,i)=>{
+              const x = i/(pts.length-1)*290+5;
+              const y = 36 - Math.max(-30,Math.min(30,d.diff/maxC*28));
+              return `${x},${y}`;
+            }).join(' ');
+            return <polyline points={coords} fill="none" stroke="#e03050" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>;
+          })()}
+        </svg>
+      </div>
+      <div className="card" style={{marginTop:10,padding:'14px 18px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div style={{textAlign:'center'}}>
+            <div style={{fontSize:36,fontWeight:900,color:'#e03050',fontFamily:"'Courier New',monospace"}}>{totals.f1}</div>
+            <div style={{fontSize:11,color:'#55557a'}}>{meta.fighter1}</div>
+          </div>
+          <div style={{textAlign:'center'}}>
+            <div style={{fontSize:13,color:'#33335a'}}>合計</div>
+            <div style={{fontSize:22,fontWeight:700,color:'#252840',fontFamily:"'Courier New',monospace"}}>—</div>
+          </div>
+          <div style={{textAlign:'center'}}>
+            <div style={{fontSize:36,fontWeight:900,color:'#3060f0',fontFamily:"'Courier New',monospace"}}>{totals.f2}</div>
+            <div style={{fontSize:11,color:'#55557a'}}>{meta.fighter2}</div>
+          </div>
+        </div>
+        {totals.f1!==totals.f2 && (
+          <div style={{marginTop:12,textAlign:'center',fontSize:13,color:totals.f1>totals.f2?'#e03050':'#3060f0',fontWeight:700}}>
+            {totals.f1>totals.f2?meta.fighter1:meta.fighter2} が {Math.abs(totals.f1-totals.f2)}pt リード
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Card Tab ─── */
+function CardTab({ rounds, meta, totals, fightCode, showToast }) {
+  const winner   = totals.f1>totals.f2 ? meta.fighter1 : totals.f2>totals.f1 ? meta.fighter2 : '';
+  const scoreDiff = Math.abs(totals.f1-totals.f2);
+
+  const exportPng = () => {
+    const canvas = document.getElementById('scoreCanvas');
+    const W=820, H=140+meta.totalRounds*46+80;
+    canvas.width=W; canvas.height=H;
+    const c=canvas.getContext('2d');
+    c.fillStyle='#0d0f18'; c.fillRect(0,0,W,H);
+    c.fillStyle='#131625'; c.fillRect(0,0,W,110);
+    c.font='bold 12px "Courier New"'; c.fillStyle='#666688'; c.textAlign='center';
+    c.fillText(`${meta.org} ${meta.weight}級 ${meta.totalRounds}回戦  ·  ${meta.date}`,W/2,24);
+    c.font='bold 24px "Courier New"'; c.fillStyle='#e03050'; c.textAlign='left'; c.fillText(meta.fighter1.toUpperCase(),50,66);
+    c.fillStyle='#3060f0'; c.textAlign='right'; c.fillText(meta.fighter2.toUpperCase(),W-50,66);
+    c.fillStyle='#252840'; c.font='bold 16px "Courier New"'; c.textAlign='center'; c.fillText('VS',W/2,66);
+    if(meta.prediction){c.fillStyle='#444466';c.font='11px "Courier New"';c.fillText('予想: '+meta.prediction,W/2,88);}
+    c.strokeStyle='#252840';c.lineWidth=1;c.beginPath();c.moveTo(50,102);c.lineTo(W-50,102);c.stroke();
+    c.fillStyle='#33335a';c.font='10px "Courier New"';c.textAlign='right';c.fillText('Score',W/2-45,120);
+    c.textAlign='left';c.fillText('Score',W/2+45,120);c.textAlign='center';c.fillText('RD',W/2,120);
+    rounds.forEach((r,i)=>{
+      const y=140+i*46;
+      if(i%2===0){c.fillStyle='rgba(255,255,255,.02)';c.fillRect(50,y-10,W-100,40);}
+      const ok=r.f1!==null&&r.f2!==null;
+      c.fillStyle='#33335a';c.font='11px "Courier New"';c.textAlign='center';c.fillText(`R${r.n}`,W/2,y+12);
+      if(ok){
+        c.fillStyle=r.f1>r.f2?'#e03050':'#55557a';
+        c.font=`${r.f1>r.f2?'bold ':''}20px "Courier New"`;c.textAlign='right';c.fillText(String(r.f1),W/2-50,y+14);
+        c.fillStyle=r.f2>r.f1?'#3060f0':'#55557a';
+        c.font=`${r.f2>r.f1?'bold ':''}20px "Courier New"`;c.textAlign='left';c.fillText(String(r.f2),W/2+50,y+14);
+        if(r.notes){c.fillStyle='#33335a';c.font='10px "Courier New"';c.textAlign='center';c.fillText(r.notes.slice(0,55),W/2,y+30);}
+      }else{c.fillStyle='#252840';c.font='14px "Courier New"';c.textAlign='center';c.fillText('— —',W/2,y+14);}
+    });
+    const ty=140+meta.totalRounds*46+8;
+    c.strokeStyle='#e03050';c.lineWidth=2;c.beginPath();c.moveTo(50,ty);c.lineTo(W-50,ty);c.stroke();
+    c.fillStyle='#e03050';c.font='bold 34px "Courier New"';c.textAlign='right';c.fillText(String(totals.f1),W/2-50,ty+38);
+    c.fillStyle='#3060f0';c.textAlign='left';c.fillText(String(totals.f2),W/2+50,ty+38);
+    c.fillStyle='#555577';c.font='bold 11px "Courier New"';c.textAlign='center';c.fillText('TOTAL',W/2,ty+38);
+    if(winner){c.fillStyle=totals.f1>totals.f2?'#e03050':'#3060f0';c.font='bold 13px "Courier New"';c.textAlign='center';c.fillText(`▶ ${winner.toUpperCase()} +${scoreDiff}pts`,W/2,ty+62);}
+    c.fillStyle='#2a2a40';c.font='10px "Courier New"';c.textAlign='right';c.fillText('BoxScore',W-20,H-8);
+    const a=document.createElement('a');a.download=`scorecard_${fightCode||'draft'}.png`;a.href=canvas.toDataURL('image/png');a.click();
+    showToast('スコアカード画像を保存しました');
+  };
+
+  return (
+    <div style={{padding:'12px 1rem'}}>
+      <div className="card">
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <div>
+            <div style={{fontSize:12,color:'#55557a'}}>{meta.org} {meta.weight}級 {meta.totalRounds}R</div>
+            <div style={{fontSize:13,fontWeight:600,marginTop:2}}>{meta.date}</div>
+          </div>
+          <button className="btn" style={{fontSize:12,padding:'7px 12px'}} onClick={exportPng}>📷 画像保存</button>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid #1e2138',marginBottom:8}}>
+          <span style={{fontWeight:800,color:'#e03050',fontSize:14}}>{meta.fighter1}</span>
+          <span style={{fontSize:12,color:'#33335a'}}>vs</span>
+          <span style={{fontWeight:800,color:'#3060f0',fontSize:14}}>{meta.fighter2}</span>
+        </div>
+        <table className="sc-table">
+          <thead><tr>
+            <th style={{textAlign:'left',maxWidth:80,overflow:'hidden',textOverflow:'ellipsis'}}>{meta.fighter1.slice(0,12)}</th>
+            <th style={{color:'#33335a'}}>RD</th>
+            <th style={{textAlign:'right',maxWidth:80,overflow:'hidden',textOverflow:'ellipsis'}}>{meta.fighter2.slice(0,12)}</th>
+          </tr></thead>
+          <tbody>
+            {rounds.map(r=>(
+              <tr key={r.n} style={{opacity:r.locked?1:.7}}>
+                <td style={{textAlign:'left',fontWeight:r.f1>r.f2?800:400,color:r.f1>r.f2?'#e03050':'#55557a'}}>
+                  {r.f1!==null?r.f1:'—'}
+                  {r.f1Downs>0 && <span style={{fontSize:10,color:'#c09010',marginLeft:3}}>KD</span>}
+                  {r.f1Ded>0  && <span style={{fontSize:10,color:'#e05060',marginLeft:2}}>(-{r.f1Ded})</span>}
+                </td>
+                <td style={{color:'#33335a',fontSize:11}}>{r.n}</td>
+                <td style={{textAlign:'right',fontWeight:r.f2>r.f1?800:400,color:r.f2>r.f1?'#3060f0':'#55557a'}}>
+                  {r.f2!==null?r.f2:'—'}
+                  {r.f2Downs>0 && <span style={{fontSize:10,color:'#c09010',marginLeft:3}}>KD</span>}
+                  {r.f2Ded>0  && <span style={{fontSize:10,color:'#3060f0',marginLeft:2}}>(-{r.f2Ded})</span>}
+                </td>
+              </tr>
+            ))}
+            <tr className="tot-row">
+              <td style={{textAlign:'left',color:totals.f1>totals.f2?'#e03050':'#dde0f0'}}>{totals.f1}</td>
+              <td style={{color:'#33335a',fontSize:11}}>計</td>
+              <td style={{textAlign:'right',color:totals.f2>totals.f1?'#3060f0':'#dde0f0'}}>{totals.f2}</td>
+            </tr>
+          </tbody>
+        </table>
+        {winner && (
+          <div style={{marginTop:12,padding:'8px 12px',background:'#0d1020',borderRadius:8,display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:13,border:'1px solid #1e2138'}}>
+            <span style={{color:'#55557a'}}>現在の優勢</span>
+            <span style={{fontWeight:800,color:totals.f1>totals.f2?'#e03050':'#3060f0'}}>{winner} +{scoreDiff}pt</span>
+          </div>
+        )}
+        {meta.prediction && <div style={{marginTop:8,fontSize:12,color:'#55557a',padding:'6px 10px',background:'#0d1020',borderRadius:6}}>📝 予想: {meta.prediction}</div>}
+        {rounds.some(r=>r.notes) && (
+          <div style={{marginTop:10}}>
+            <div style={{fontSize:11,fontWeight:700,color:'#55557a',marginBottom:6}}>ラウンドメモ</div>
+            {rounds.filter(r=>r.notes).map(r=>(
+              <div key={r.n} style={{fontSize:12,color:'#7777aa',padding:'4px 0',borderBottom:'1px solid #1a1d28'}}>
+                <span style={{color:'#33335a',fontFamily:"'Courier New',monospace",marginRight:8}}>R{r.n}</span>{r.notes}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Mount ─── */
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
