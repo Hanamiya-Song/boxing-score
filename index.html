@@ -141,6 +141,12 @@ textarea{resize:vertical;min-height:60px}
 .link:hover{text-decoration:underline}
 .mono{font-family:'Courier New',monospace;background:#0d1020;border:1px solid #252840;border-radius:5px;padding:1px 5px;font-size:12px;color:#9999cc}
 </style>
+  <link rel="manifest" href="manifest.json">
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/boxing-score/sw.js');
+  }
+</script>
 </head>
 <body>
 <div id="splash">
