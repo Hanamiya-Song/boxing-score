@@ -229,13 +229,32 @@ function App() {
     const ok = isConfig();
     setConfigured(ok);
     if (ok) initFirebase();
-    // parse ?c= from URL
     const params = new URLSearchParams(location.search);
     const c = params.get('c');
-    if (c) setJoinInput(c.toUpperCase());
-    setTimeout(() => {
+    setTimeout(async () => {
       document.getElementById('splash').style.display = 'none';
       setReady(true);
+      if (ok && c) {
+        const code = c.toUpperCase();
+        setJoinInput(code);
+        setLoading(true);
+        try {
+          const fm = await fbGet(`fights/${code}/meta`);
+          if (fm) {
+            setMeta(fm);
+            setFightCode(code);
+            const sid = getScorerId();
+            const existing = await fbGet(`fights/${code}/scorers/${sid}`);
+            let r, curr;
+            if (existing) { r = existing.rounds; curr = existing.currRound || 1; }
+            else { r = Array.from({ length: fm.totalRounds }, (_, i) => mkRound(i+1)); curr = 1;
+                   await fbSet(`fights/${code}/scorers/${sid}`, { rounds: r, currRound: 1, updatedAt: Date.now() }); }
+            setRounds(r); setCurrRound(curr); setActiveRound(curr);
+            setPage('scoring');
+          }
+        } catch(e) { console.warn(e); }
+        setLoading(false);
+      }
     }, 600);
   }, []);
 
